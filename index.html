@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4a3728">
+<title>Bible Verse Reminder</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f1ea;
+    color: #2c2c2a;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  .app { width: 100%; max-width: 480px; }
+  h1 {
+    font-size: 20px; font-weight: 600; text-align: center;
+    margin-bottom: 4px; color: #4a3728;
+  }
+  .subtitle { text-align: center; color: #7a7a75; font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: #ffffff; border-radius: 14px; border: 1px solid #e6e1d6;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #8a7a5c; margin: 0 0 12px 0;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 12px;
+  }
+  .row label { font-size: 14px; color: #444; }
+  input[type="number"] {
+    width: 80px; padding: 8px 10px; border: 1px solid #d8d2c4;
+    border-radius: 8px; font-size: 14px; text-align: center;
+  }
+  select {
+    padding: 8px 10px; border: 1px solid #d8d2c4; border-radius: 8px;
+    font-size: 14px; background: white;
+  }
+  .status { font-size: 13px; color: #7a7a75; text-align: center; margin-top: 4px; }
+  .status.active { color: #2d7a4f; font-weight: 600; }
+  .status.warn { color: #a35c1f; font-weight: 600; }
+  .btn-row { display: flex; gap: 10px; }
+  button {
+    flex: 1; padding: 12px; border: none; border-radius: 10px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  #startBtn { background: #4a3728; color: white; }
+  #startBtn:disabled { background: #cfc6b3; cursor: default; }
+  #stopBtn { background: #eee; color: #444; }
+  #stopBtn:disabled { opacity: 0.5; cursor: default; }
+  .countdown { text-align: center; font-size: 13px; color: #a89a7d; margin-top: 10px; }
+  .setup-note {
+    background: #fbf3e3; border: 1px solid #ecd9ae; border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; color: #6b5326; margin-bottom: 16px; line-height: 1.5;
+  }
+  .setup-note b { color: #4a3728; }
+  .overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(20, 15, 8, 0.85);
+    display: none; align-items: center; justify-content: center;
+    z-index: 999; padding: 20px;
+  }
+  .overlay.show { display: flex; }
+  .verse-box {
+    background: #fffdf8; border-radius: 18px; padding: 40px 32px;
+    max-width: 460px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    animation: pop 0.35s ease;
+  }
+  @keyframes pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .verse-text { font-size: 21px; line-height: 1.6; color: #3a2e20; font-style: italic; margin-bottom: 18px; }
+  .verse-ref { font-size: 15px; font-weight: 700; color: #8a6d3b; margin-bottom: 26px; }
+  #dismissBtn { background: #4a3728; color: white; padding: 12px 30px; border-radius: 30px; font-size: 15px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <h1>Bible Verse Reminder</h1>
+  <div class="subtitle">Pops up a verse on a timer, with a beep or lock-screen notification — the next one waits until you've seen this one.</div>
+
+  <div class="setup-note" id="setupNote">
+    Checking notification support…
+  </div>
+
+  <div class="card">
+    <h2>Timing</h2>
+    <div class="row">
+      <label>Show a verse every</label>
+      <div>
+        <input type="number" id="intervalValue" min="1" value="5">
+        <select id="intervalUnit">
+          <option value="minutes" selected>minutes</option>
+          <option value="seconds">seconds</option>
+          <option value="hours">hours</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <label>Start after (delay)</label>
+      <div>
+        <input type="number" id="delayValue" min="0" value="0">
+        <select id="delayUnit">
+          <option value="seconds" selected>seconds</option>
+          <option value="minutes">minutes</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+  <div class="status" id="statusText">Not running</div>
+  <div class="countdown" id="countdownText"></div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="verse-box">
+    <div class="verse-text" id="verseText"></div>
+    <div class="verse-ref" id="verseRef"></div>
+    <button id="dismissBtn">I've read it ✓</button>
+  </div>
+</div>
+
+<script>
+const verses = [
+  ["The Lord is my shepherd; I shall not want.", "Psalm 23:1"],
+  ["I can do all things through Christ which strengtheneth me.", "Philippians 4:13"],
+  ["Trust in the Lord with all thine heart; and lean not unto thine own understanding.", "Proverbs 3:5"],
+  ["For God so loved the world, that he gave his only begotten Son.", "John 3:16"],
+  ["Be strong and of a good courage; be not afraid.", "Joshua 1:9"],
+  ["Cast all your anxiety on him because he cares for you.", "1 Peter 5:7"],
+  ["I have set the Lord always before me: because he is at my right hand, I shall not be moved.", "Psalm 16:8"],
+  ["This is the day which the Lord hath made; we will rejoice and be glad in it.", "Psalm 118:24"],
+  ["And we know that all things work together for good to them that love God.", "Romans 8:28"],
+  ["The Lord is my light and my salvation; whom shall I fear?", "Psalm 27:1"],
+  ["Delight thyself also in the Lord: and he shall give thee the desires of thine heart.", "Psalm 37:4"],
+  ["Be not afraid, only believe.", "Mark 5:36"],
+  ["Come unto me, all ye that labour and are heavy laden, and I will give you rest.", "Matthew 11:28"],
+  ["Fear thou not; for I am with thee: be not dismayed; for I am thy God.", "Isaiah 41:10"],
+  ["The Lord will fight for you, and ye shall hold your peace.", "Exodus 14:14"],
+  ["Rejoice in the Lord alway: and again I say, Rejoice.", "Philippians 4:4"],
+  ["Thy word is a lamp unto my feet, and a light unto my path.", "Psalm 119:105"],
+  ["Let all that you do be done in love.", "1 Corinthians 16:14"],
+  ["Have not I commanded thee? Be strong and of a good courage; be not afraid.", "Joshua 1:9"],
+  ["The joy of the Lord is your strength.", "Nehemiah 8:10"]
+];
+
+let usedIndices = [];
+let timerId = null;
+let countdownId = null;
+let nextFireTime = null;
+let popupPending = false;
+let isRunning = false;
+let swRegistration = null;
+let notificationsReady = false;
+
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusText = document.getElementById('statusText');
+const countdownText = document.getElementById('countdownText');
+const overlay = document.getElementById('overlay');
+const verseText = document.getElementById('verseText');
+const verseRef = document.getElementById('verseRef');
+const dismissBtn = document.getElementById('dismissBtn');
+const setupNote = document.getElementById('setupNote');
+
+let channel = null;
+if ('BroadcastChannel' in window) {
+  channel = new BroadcastChannel('verse-app');
+  channel.onmessage = (event) => {
+    if (event.data && event.data.type === 'dismissed') {
+      unlockNext();
+    }
+  };
+}
+
+async function setupServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    setupNote.innerHTML = "Your browser doesn't support installable notifications. The in-tab popup below will still work while this page is open and visible.";
+    return;
+  }
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    setupNote.innerHTML = "<b>Heads up:</b> lock-screen notifications only work when this page is hosted on HTTPS (or localhost) — opening it directly from a file won't allow that. Host it (e.g. GitHub Pages, Netlify) and open it from that URL, then add it to your home screen for the best result.";
+    return;
+  }
+  try {
+    swRegistration = await navigator.serviceWorker.register('sw.js');
+    if (Notification.permission === 'granted') {
+      notificationsReady = true;
+      setupNote.innerHTML = "<b>Notifications enabled.</b> Add this page to your home screen (Share → Add to Home Screen) and keep the app open in the background for verses to reach your lock screen.";
+    } else if (Notification.permission === 'denied') {
+      setupNote.innerHTML = "Notifications are blocked in your browser settings. Enable them for this site to get lock-screen popups — otherwise you'll only see verses while this tab is open.";
+    } else {
+      setupNote.innerHTML = "Tap <b>Start</b> below and allow notifications when asked — that's what lets verses reach your lock screen.";
+    }
+  } catch (e) {
+    setupNote.innerHTML = "Couldn't set up background notifications (" + e.message + "). The in-tab popup will still work while this page is open.";
+  }
+}
+setupServiceWorker();
+
+function unitToMs(value, unit) {
+  const v = parseFloat(value) || 0;
+  if (unit === 'seconds') return v * 1000;
+  if (unit === 'minutes') return v * 60 * 1000;
+  if (unit === 'hours') return v * 60 * 60 * 1000;
+  return v * 1000;
+}
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.55);
+  } catch (e) {}
+}
+
+function pickVerse() {
+  if (usedIndices.length >= verses.length) usedIndices = [];
+  let idx;
+  do { idx = Math.floor(Math.random() * verses.length); } while (usedIndices.includes(idx));
+  usedIndices.push(idx);
+  return verses[idx];
+}
+
+function unlockNext() {
+  overlay.classList.remove('show');
+  if (popupPending) {
+    popupPending = false;
+    setTimeout(showVerse, 300);
+  } else {
+    scheduleNext();
+  }
+}
+
+async function showVerse() {
+  const [text, ref] = pickVerse();
+
+  if (document.visibilityState === 'visible') {
+    if (overlay.classList.contains('show')) { popupPending = true; return; }
+    verseText.textContent = "\u201C" + text + "\u201D";
+    verseRef.textContent = ref;
+    overlay.classList.add('show');
+    beep();
+  } else if (notificationsReady && swRegistration) {
+    swRegistration.showNotification('Bible verse', {
+      body: text + '  \u2014 ' + ref,
+      tag: 'bible-verse',
+      icon: 'icon.png',
+      badge: 'icon.png',
+      requireInteraction: true,
+      vibrate: [200, 100, 200]
+    });
+    popupPending = true;
+  } else {
+    verseText.textContent = "\u201C" + text + "\u201D";
+    verseRef.textContent = ref;
+    overlay.classList.add('show');
+    beep();
+  }
+}
+
+function scheduleNext() {
+  const gapMs = unitToMs(document.getElementById('intervalValue').value, document.getElementById('intervalUnit').value);
+  nextFireTime = Date.now() + gapMs;
+  clearTimeout(timerId);
+  timerId = setTimeout(async () => {
+    await showVerse();
+    if (!popupPending) scheduleNext();
+  }, gapMs);
+}
+
+function updateCountdown() {
+  if (!isRunning || !nextFireTime) { countdownText.textContent = ''; return; }
+  if (popupPending) {
+    countdownText.textContent = 'Waiting for you to see the current verse…';
+    return;
+  }
+  const remaining = Math.max(0, nextFireTime - Date.now());
+  const secs = Math.ceil(remaining / 1000);
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  countdownText.textContent = 'Next verse in ' + (m > 0 ? m + 'm ' : '') + s + 's';
+}
+
+startBtn.addEventListener('click', async () => {
+  if ('Notification' in window && Notification.permission === 'default') {
+    const perm = await Notification.requestPermission();
+    if (perm === 'granted' && swRegistration) {
+      notificationsReady = true;
+      setupNote.innerHTML = "<b>Notifications enabled.</b> Add this page to your home screen (Share → Add to Home Screen) and keep the app open in the background for verses to reach your lock screen.";
+    }
+  }
+
+  const delayMs = unitToMs(document.getElementById('delayValue').value, document.getElementById('delayUnit').value);
+  isRunning = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  statusText.textContent = 'Running';
+  statusText.classList.add('active');
+  statusText.classList.remove('warn');
+
+  nextFireTime = Date.now() + delayMs;
+  clearTimeout(timerId);
+  timerId = setTimeout(async () => {
+    await showVerse();
+    if (!popupPending) scheduleNext();
+  }, delayMs);
+
+  countdownId = setInterval(updateCountdown, 500);
+});
+
+stopBtn.addEventListener('click', () => {
+  isRunning = false;
+  popupPending = false;
+  clearTimeout(timerId);
+  clearInterval(countdownId);
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  statusText.textContent = 'Not running';
+  statusText.classList.remove('active');
+  countdownText.textContent = '';
+});
+
+dismissBtn.addEventListener('click', () => {
+  unlockNext();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && popupPending && !overlay.classList.contains('show')) {
+    if (swRegistration) {
+      swRegistration.getNotifications({ tag: 'bible-verse' }).then((notifs) => {
+        notifs.forEach((n) => n.close());
+      });
+    }
+    unlockNext();
+  }
+});
+</script>
+
+</body>
+</html>
